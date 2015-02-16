@@ -493,24 +493,26 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	## all the allele counts for each base interogated
 	x.fw = counts[,,1:ncol, drop=FALSE]
 	x.bw = counts[,,1:ncol + ncol, drop=FALSE]
+	## combined forward-reverse counts for all samples
+	x <- x.fw+x.bw
 	
 	## total depths forward and backwards
 	n.fw = rep(rowSums(x.fw, dims=2), dim(x.fw)[3])
 	n.bw = rep(rowSums(x.bw, dims=2), dim(x.bw)[3])
-	
-	## combined forward-reverse counts for all samples
-	x <- x.fw+x.bw
+	## an array of total depths per base for each sample?
 	n = array(n.fw + n.bw, dim=dim(x)[1:2])
+	
 	mu = (x + pseudo.rho) / (rep(n + ncol*pseudo.rho, dim(x)[3]) )
 	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplactions will resolve to zero if FALSE
+
 	if(is.null(rho)){
 		rho = estimateRho(x, mu, ix)
 		rho = pmin(pmax(rho, rho.min), rho.max)
 		rho[is.na(rho)] = rho.min
-		
 	}
+	
+	## Number of samples in the control?
 	X =  colSums(x, dims=1)
-	#rm(x)
 	
 	bound = function(x, xmin, xmax){
 		x = pmax(x, xmin)
@@ -518,12 +520,20 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 		return(x)
 	}
 	
-	disp = (1-rho)/rho 
+	## dispersal factor
+	disp = (1-rho)/rho
+	
+	## disperal factor for each.... actually im not sure...
 	rdisp <- rep(disp, each=nrow(counts))
+	
+	## naughty naughty variable reuse very similar but different.....
 	mu = (x + pseudo) / (rep(n + ncol*pseudo, dim(x)[3]) ) ## sample rate forward+bwackward (true allele frequency)
 	mu = bound(mu, mu.min, mu.max) * rdisp
+	
+	## filtered forward allele counts 
 	tr.fw = x.fw * ix
 	
+	#### Here......
 	X.fw = rep(colSums(tr.fw, dims=1), each = nrow(counts)) - tr.fw ## control samples
 	N.fw = rep(colSums(n.fw * ix), each = nrow(counts)) - n.fw * ix
 	#nu0.fw <- array(rep((colSums(tr.fw) +pseudo) / (colSums(n.fw * ix) + ncol*pseudo) * disp, each = nrow(tr.fw)), dim = dim(tr.fw)) * mumax
@@ -534,7 +544,9 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	nu.fw <- (X.fw+pseudo) / (N.fw + ncol*pseudo)
 	nu.fw <- bound(nu.fw, mu.min, mu.max) * rdisp
 	
+	## filtered reverse allele counts
 	tr.bw = x.bw * ix
+	
 	X.bw = rep(colSums(tr.bw, dims=1), each = nrow(counts)) - tr.bw 
 	N.bw = rep(colSums(n.bw * ix), each = nrow(counts)) - n.bw * ix
 	#nu0.bw <- array(rep((colSums(tr.bw) + pseudo) / (colSums(n.bw * ix) + ncol*pseudo) * disp, each = nrow(tr.bw)), dim = dim(tr.bw)) * mumax
