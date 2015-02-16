@@ -487,19 +487,22 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	model = match.arg(model)
 	return.value = match.arg(return.value)
 	
+	## the number of bases (e.g. ATCG - divided by 2 because they are repeated for the reverse strand)
 	ncol = dim(counts)[3]/2
 	
+	## all the allele counts for each base interogated
 	x.fw = counts[,,1:ncol, drop=FALSE]
 	x.bw = counts[,,1:ncol + ncol, drop=FALSE]
 	
+	## total depths forward and backwards
 	n.fw = rep(rowSums(x.fw, dims=2), dim(x.fw)[3])
 	n.bw = rep(rowSums(x.bw, dims=2), dim(x.bw)[3])
 	
-	
+	## combined forward-reverse counts for all samples
 	x <- x.fw+x.bw
 	n = array(n.fw + n.bw, dim=dim(x)[1:2])
 	mu = (x + pseudo.rho) / (rep(n + ncol*pseudo.rho, dim(x)[3]) )
-	ix = (mu < truncate)
+	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplactions will resolve to zero if FALSE
 	if(is.null(rho)){
 		rho = estimateRho(x, mu, ix)
 		rho = pmin(pmax(rho, rho.min), rho.max)
