@@ -540,16 +540,21 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	## for each base/allele for each sample.
 	### rep(colSums(tr.fw, dims=1), each = nrow(counts))
 	### generates a 3d array with the 'total' value repeated for every sample,base,allele
-	### ....
+	### -tr.fw subtracts the sample counts from the totals so that the totals are relavent to each sample
 	X.fw = rep(colSums(tr.fw, dims=1), each = nrow(counts)) - tr.fw ## control samples
 	N.fw = rep(colSums(n.fw * ix), each = nrow(counts)) - n.fw * ix
 	
-	nu0.fw <- (X.fw + x.fw + pseudo)/(N.fw + n.fw + ncol*pseudo)
-	nu0.fw <- bound(nu0.fw, mu.min, mu.max)* rdisp
-	mu0.bw <- (x.bw+pseudo) / (n.bw + ncol*pseudo) 
-	mu0.bw <- bound(mu0.bw, mu.min, mu.max) * rdisp
+	## relative proportions of COMBINED allele count to COMBINED total base depth
 	nu.fw <- (X.fw+pseudo) / (N.fw + ncol*pseudo)
 	nu.fw <- bound(nu.fw, mu.min, mu.max) * rdisp
+	
+	## relative proportions of COMBINED allele count to COMBINED total base depth WITH respective SAMPLE included
+	nu0.fw <- (X.fw + x.fw + pseudo)/(N.fw + n.fw + ncol*pseudo)
+	nu0.fw <- bound(nu0.fw, mu.min, mu.max)* rdisp
+	
+	## relative proportions of SAMPLE allele count to SAMPLE total base depth
+	mu0.fw <- (x.fw+pseudo) / (n.fw +  ncol*pseudo)
+	mu0.fw <- bound(mu0.fw, mu.min, mu.max) * rdisp
 	
 	## filtered reverse allele counts
 	tr.bw = x.bw * ix
@@ -557,12 +562,14 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	X.bw = rep(colSums(tr.bw, dims=1), each = nrow(counts)) - tr.bw 
 	N.bw = rep(colSums(n.bw * ix), each = nrow(counts)) - n.bw * ix
 
-	nu0.bw <- (X.bw + x.bw + pseudo)/(N.bw + n.bw + ncol*pseudo)
-	nu0.bw <- bound(nu0.bw, mu.min, mu.max) * rdisp
-	mu0.fw <- (x.fw+pseudo) / (n.fw +  ncol*pseudo)
-	mu0.fw <- bound(mu0.fw, mu.min, mu.max) * rdisp
 	nu.bw <- (X.bw+pseudo) / (N.bw + ncol*pseudo) 
 	nu.bw <- bound(nu.bw, mu.min, mu.max) * rdisp
+
+	nu0.bw <- (X.bw + x.bw + pseudo)/(N.bw + n.bw + ncol*pseudo)
+	nu0.bw <- bound(nu0.bw, mu.min, mu.max) * rdisp
+
+	mu0.bw <- (x.bw+pseudo) / (n.bw + ncol*pseudo) 
+	mu0.bw <- bound(mu0.bw, mu.min, mu.max) * rdisp
 	
 	## Return rates only
 	if(return.value == "err"){ 
