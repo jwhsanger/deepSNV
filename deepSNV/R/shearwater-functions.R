@@ -503,7 +503,7 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	n = array(n.fw + n.bw, dim=dim(x)[1:2])
 	
 	mu = (x + pseudo.rho) / (rep(n + ncol*pseudo.rho, dim(x)[3]) )
-	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplactions will resolve to zero if FALSE
+	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplications will resolve to zero if FALSE
 
 	if(is.null(rho)){
 		rho = estimateRho(x, mu, ix)
@@ -536,7 +536,7 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	#### Here......
 	X.fw = rep(colSums(tr.fw, dims=1), each = nrow(counts)) - tr.fw ## control samples
 	N.fw = rep(colSums(n.fw * ix), each = nrow(counts)) - n.fw * ix
-	#nu0.fw <- array(rep((colSums(tr.fw) +pseudo) / (colSums(n.fw * ix) + ncol*pseudo) * disp, each = nrow(tr.fw)), dim = dim(tr.fw)) * mumax
+	
 	nu0.fw <- (X.fw + x.fw + pseudo)/(N.fw + n.fw + ncol*pseudo)
 	nu0.fw <- bound(nu0.fw, mu.min, mu.max)* rdisp
 	mu0.bw <- (x.bw+pseudo) / (n.bw + ncol*pseudo) 
@@ -549,7 +549,7 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	
 	X.bw = rep(colSums(tr.bw, dims=1), each = nrow(counts)) - tr.bw 
 	N.bw = rep(colSums(n.bw * ix), each = nrow(counts)) - n.bw * ix
-	#nu0.bw <- array(rep((colSums(tr.bw) + pseudo) / (colSums(n.bw * ix) + ncol*pseudo) * disp, each = nrow(tr.bw)), dim = dim(tr.bw)) * mumax
+
 	nu0.bw <- (X.bw + x.bw + pseudo)/(N.bw + n.bw + ncol*pseudo)
 	nu0.bw <- bound(nu0.bw, mu.min, mu.max) * rdisp
 	mu0.fw <- (x.fw+pseudo) / (n.fw +  ncol*pseudo)
