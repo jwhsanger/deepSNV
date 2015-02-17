@@ -533,7 +533,14 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	## filtered forward allele counts 
 	tr.fw = x.fw * ix
 	
-	#### Here......
+	## The sum over all samples at each position `colSums(..)`. 
+	## These are repeated `rep(..)` each `,..each=nrow(counts)` to match the size of the count array again
+	## Then the counts of sample i is substracted `-tr.fw`
+	## We thus end up with X.fw = (i,j,total-(i,j,k)) which translates to a 3d array of the differnece
+	## for each base/allele for each sample.
+	### rep(colSums(tr.fw, dims=1), each = nrow(counts))
+	### generates a 3d array with the 'total' value repeated for every sample,base,allele
+	### ....
 	X.fw = rep(colSums(tr.fw, dims=1), each = nrow(counts)) - tr.fw ## control samples
 	N.fw = rep(colSums(n.fw * ix), each = nrow(counts)) - n.fw * ix
 	
