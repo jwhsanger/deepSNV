@@ -592,6 +592,15 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	
 	
 	if(model %in% c("OR","adaptive")){
+
+#logbb	
+#' Logarithmic beta binomial without binomial coefficients.
+#' @param x Counts
+#' @param n Coverage
+#' @param mu Relative frequency (scaled by dispersion)
+#' @param disp Dispersion factor rho/(1-rho)
+#' @return The logarithmic beta binomial
+	
 		## Bayes factor forward
 		Bf.fw <- logbb(x.fw, n.fw, nu0.fw, rdisp) + logbb(x.bw, n.bw, mu0.bw, rdisp) + logbb(X.fw, N.fw, nu0.fw, rdisp) - logbb(x.fw, n.fw, mu, rdisp) - logbb(x.bw, n.bw, mu, rdisp) - logbb(X.fw, N.fw, nu.fw, rdisp)
 		Bf.fw = exp(Bf.fw)
@@ -640,6 +649,197 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	}
 }
 
+#' Bayesian beta-binomal test, codename shearwater
+#' 
+#' This is the workhorse of the shearwater test. It computes the Bayes factor for each sample, nucleotide and position of the null-model vs. the alternative of a real variant.
+#' @param normal.X colSums(normal.tr.fw, dims=1) (pre calculated)
+#' @param normal.N colSums(n * ix)  n = rep(rowSums(norma_counts, dims=2), dim(normal_counts)[3]) (pre calculated)
+#' @param counts An \code{\link{array}} of nucleotide counts (samples x positions x 10 nucleotides in forward and reverse orientation), typically from \code{\link{loadAllData}} for a single sample
+#' @param truncate The model uses a compound control sample which is the sum of all samples with a relative nucleotide frequency below truncate at this locus. Default = 0.1.
+#' @param alternative The alternative. Currently only "greater" is implemented.
+#' @param rho Disperision factor. REQUIRED
+#' @param mu.min Minimum of the error rate mu.
+#' @param mu.max Maximal error rate mu.
+#' @param pseudo A pseudo count to be added to the counts to avoid problems with zeros.
+#' @param return.value Return value. Either "BF" for Bayes Factor of "P0" for the posterior probability (assuming a prior of 0.5).
+#' @param model The null model to use. For "OR" it requires the alternative model to be violated on either of the strands, for "AND" the null is specified such that the error rates of the sample 
+#' of interest and the compound control sample are identical on both strands. "AND" typically yield many more calls. The most recent addition is "adaptive", which switches from "OR" to "AND", if the coverage 
+#' is less than min.cov, or if the odds of forward and reverse coverage is greater than max.odds. Default = "OR".
+#' @param min.cov Minimal coverage to swith from OR to AND, if model is "adaptive"
+#' @param max.odds Maximal odds before switching from OR to AND if model is "adaptive" and min.cov=NULL.
+#' @return An \code{\link{array}} of Bayes factors
+singleSample.bbb <- function(normal.X, normal.N, counts, rho = NULL, alternative="greater", truncate=0.1, pseudo = .Machine$double.eps, return.value=c("BF","P0", "err"), model=c("OR","AND", "adaptive"), min.cov=NULL, max.odds=10, mu.min = 1e-6, mu.max = 1 - mu.min) {
+	pseudo.rho = .Machine$double.eps
+	## minum value for rho
+	
+	model = match.arg(model)
+	return.value = match.arg(return.value)
+	
+	## the number of bases (e.g. ATCG - divided by 2 because they are repeated for the reverse strand)
+	ncol = dim(counts)[3]/2
+	
+	## all the allele counts for each base interogated
+	x.fw = counts[,,1:ncol, drop=FALSE]
+	x.bw = counts[,,1:ncol + ncol, drop=FALSE]
+	## combined forward-reverse counts for all samples
+	x <- x.fw+x.bw
+	
+	## total depths forward and backwards
+	n.fw = rep(rowSums(x.fw, dims=2), dim(x.fw)[3])
+	n.bw = rep(rowSums(x.bw, dims=2), dim(x.bw)[3])
+	## an array of total depths per base for each sample?
+	n = array(n.fw + n.bw, dim=dim(x)[1:2])
+	
+	## all the normal panel allele counts for each base interogated
+	normal.X.fw = normal.X[,,1:ncol, drop=FALSE]
+	normal.X.bw = normal.X[,,1:ncol + ncol, drop=FALSE]
+	## combined forward-reverse counts for all samples
+	normal.X.sum <- x.fw+x.bw
+	
+	## total normal panel depths forward and backwards
+	normal.N.fw = normal.N[,,1:ncol, drop=FALSE]
+	normal.N.bw = normal.N[,,1:ncol + ncol, drop=FALSE]
+	
+	## mu = variant allele fraction (VAF)
+	mu = (x + pseudo.rho) / (rep(n + ncol*pseudo.rho, dim(x)[3]) )
+	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplications will resolve to zero if FALSE
+	
+	## Number of samples in the control?
+	#X =  colSums(x, dims=1)
+	
+	bound = function(x, xmin, xmax){
+		x = pmax(x, xmin)
+		x = pmin(x, xmax)
+		return(x)
+	}
+	
+	## dispersal factor
+	disp = (1-rho)/rho
+	
+	## disperal factor for each.... actually im not sure...
+	rdisp <- rep(disp, each=nrow(counts))
+	
+	## naughty naughty variable reuse very similar but different.....
+	mu = (x + pseudo) / (rep(n + ncol*pseudo, dim(x)[3]) ) ## sample rate forward+bwackward (true allele frequency)
+	mu = bound(mu, mu.min, mu.max) * rdisp
+	
+	## filtered forward allele counts 
+	tr.fw = x.fw * ix
+	
+	## The sum over all samples at each position `colSums(..)`. 
+	## These are repeated `rep(..)` each `,..each=nrow(counts)` to match the size of the count array again
+	## Then the counts of sample i is substracted `-tr.fw`
+	## We thus end up with X.fw = (i,j,total-(i,j,k)) which translates to a 3d array of the differnece
+	## for each base/allele for each sample.
+	### rep(colSums(tr.fw, dims=1), each = nrow(counts))
+	### generates a 3d array with the 'total' value repeated for every sample,base,allele
+	### -tr.fw subtracts the sample counts from the totals so that the totals are relavent to each sample
+	X.fw = rep(normal.X.fw, each = nrow(counts)) - x.fw ## control samples
+	N.fw = rep(normal.N.fw, each = nrow(counts)) - n.fw
+	
+	## relative proportions of COMBINED allele count to COMBINED total base depth
+	nu.fw <- (X.fw+pseudo) / (N.fw + ncol*pseudo)
+	nu.fw <- bound(nu.fw, mu.min, mu.max) * rdisp
+	
+	## relative proportions of COMBINED allele count to COMBINED total base depth WITH respective SAMPLE included
+	nu0.fw <- (X.fw + x.fw + pseudo)/(N.fw + n.fw + ncol*pseudo)
+	nu0.fw <- bound(nu0.fw, mu.min, mu.max)* rdisp
+	
+	## relative proportions of SAMPLE allele count to SAMPLE total base depth
+	mu0.fw <- (x.fw+pseudo) / (n.fw +  ncol*pseudo)
+	mu0.fw <- bound(mu0.fw, mu.min, mu.max) * rdisp
+	
+	## filtered reverse allele counts
+	tr.bw = x.bw * ix
+	
+	X.bw = rep(normal.X.bw, each = nrow(counts)) - x.bw 
+	N.bw = rep(normal.N.bw, each = nrow(counts)) - n.bw
+
+	nu.bw <- (X.bw+pseudo) / (N.bw + ncol*pseudo) 
+	nu.bw <- bound(nu.bw, mu.min, mu.max) * rdisp
+
+	nu0.bw <- (X.bw + x.bw + pseudo)/(N.bw + n.bw + ncol*pseudo)
+	nu0.bw <- bound(nu0.bw, mu.min, mu.max) * rdisp
+
+	mu0.bw <- (x.bw+pseudo) / (n.bw + ncol*pseudo) 
+	mu0.bw <- bound(mu0.bw, mu.min, mu.max) * rdisp
+	
+	## Return rates only
+	if(return.value == "err"){ 
+		nu0 <- (X.bw + tr.fw + X.fw + tr.bw+ pseudo)/(N.bw + n.bw +N.fw +n.fw+ ncol*pseudo)
+		nu0 <- bound(nu0, mu.min, mu.max)
+		return(list(nu = nu0[1,,], nu.fw=(nu0.fw/rdisp)[1,,], nu.bw=(nu0.bw/rdisp)[1,,], rho=rho))
+	}
+	rm(tr.fw)
+	rm(tr.bw)
+	
+	## Enforce mu > nu
+	mu = pmax(mu, nu0.fw)
+	mu = pmax(mu, nu0.bw)
+	
+	mu0.fw = pmax(mu0.fw, nu0.fw)
+	mu0.bw = pmax(mu0.bw, nu0.bw)
+	
+	## All the above is used for the calculation of mu
+	
+	
+	if(model %in% c("OR","adaptive")){
+
+#logbb	
+#' Logarithmic beta binomial without binomial coefficients.
+#' @param x Counts
+#' @param n Coverage
+#' @param mu Relative frequency (scaled by dispersion)
+#' @param disp Dispersion factor rho/(1-rho)
+#' @return The logarithmic beta binomial
+	
+		## Bayes factor forward
+		Bf.fw <- logbb(x.fw, n.fw, nu0.fw, rdisp) + logbb(x.bw, n.bw, mu0.bw, rdisp) + logbb(X.fw, N.fw, nu0.fw, rdisp) - logbb(x.fw, n.fw, mu, rdisp) - logbb(x.bw, n.bw, mu, rdisp) - logbb(X.fw, N.fw, nu.fw, rdisp)
+		Bf.fw = exp(Bf.fw)
+		
+		Bf.both = logbb(x.fw, n.fw, nu0.fw, rdisp) + logbb(X.fw, N.fw, nu0.fw, rdisp) - logbb(x.fw, n.fw, mu, rdisp) - logbb(X.fw, N.fw, nu.fw, rdisp)
+		
+		rm(X.fw, N.fw, mu0.bw, nu.fw)
+		
+		## Bayes factor reverse
+		Bf.bw <- logbb(x.fw, n.fw, mu0.fw, rdisp) + logbb(x.bw, n.bw, nu0.bw, rdisp) + logbb(X.bw, N.bw, nu0.bw, rdisp) - logbb(x.fw, n.fw, mu, rdisp) - logbb(x.bw, n.bw, mu, rdisp) - logbb(X.bw, N.bw, nu.bw, rdisp)
+		Bf.bw = exp(Bf.bw)
+		
+		Bf.both = Bf.both + logbb(x.bw, n.bw, nu0.bw, rdisp) + logbb(X.bw, N.bw, nu0.bw, rdisp) - logbb(x.bw, n.bw, mu, rdisp) - logbb(X.bw, N.bw, nu.bw, rdisp)
+		Bf.both = exp(Bf.both)
+		
+		rm(X.bw, N.bw, mu0.fw, nu.bw)
+		
+		#f.se.g <- mu < 0.5*(nu0.fw + nu0.bw)	
+		
+		rm(mu, nu0.fw, nu0.bw)	
+		
+		Bf = Bf.fw + Bf.bw - Bf.both + .Machine$double.xmin
+	}else{
+		Bf.both = logbb(x.fw, n.fw, nu0.fw, rdisp) + logbb(X.fw, N.fw, nu0.fw, rdisp) - logbb(x.fw, n.fw, mu, rdisp) - logbb(X.fw, N.fw, nu.fw, rdisp) + logbb(x.bw, n.bw, nu0.bw, rdisp) + logbb(X.bw, N.bw, nu0.bw, rdisp) - logbb(x.bw, n.bw, mu, rdisp) - logbb(X.bw, N.bw, nu.bw, rdisp)
+		Bf = exp(Bf.both)
+	}
+	
+	if(model=="adaptive"){
+		if(!is.null(min.cov))
+			ix <- n.fw < min.cov | n.bw < min.cov
+		else
+			ix <- na.omit(abs(log10(n.fw/n.bw)) > log10(max.odds))
+		Bf[ix] <- Bf.both[ix]
+	}
+	
+	#Bf[f.se.g] = Inf
+	## If smaller, take H0
+	cons= apply(X,1, which.max)
+	for(i in 1:ncol(Bf))
+		Bf[,i,cons[i]] = NA
+	
+	if(return.value=="P0"){
+		return(Bf/(1+Bf))
+	}else{
+		return(Bf)
+	}
+}
 
 #' Get mutation IDs
 #' @param vcf 
