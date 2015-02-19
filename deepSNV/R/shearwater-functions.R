@@ -502,6 +502,7 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	## an array of total depths per base for each sample?
 	n = array(n.fw + n.bw, dim=dim(x)[1:2])
 	
+	## mu = variant allele fraction (VAF)
 	mu = (x + pseudo.rho) / (rep(n + ncol*pseudo.rho, dim(x)[3]) )
 	ix = (mu < truncate) # Mask - basically 1 or 0. Array multiplications will resolve to zero if FALSE
 
@@ -586,6 +587,9 @@ cached.bbb <- function(counts, rho = NULL, alternative="greater", truncate=0.1, 
 	
 	mu0.fw = pmax(mu0.fw, nu0.fw)
 	mu0.bw = pmax(mu0.bw, nu0.bw)
+	
+	## All the above is used for the calculation of mu
+	
 	
 	if(model %in% c("OR","adaptive")){
 		## Bayes factor forward
